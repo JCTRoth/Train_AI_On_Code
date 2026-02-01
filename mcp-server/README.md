@@ -64,9 +64,21 @@ The project includes an MCP (Model Context Protocol) server that exposes the con
 ### Setup
 
 ```bash
-cd packages/mcp-server
+# Install dependencies (from root)
 npm install
-npm run build
+
+# Build the MCP server
+npm run build:mcp
+```
+
+### Running the Server
+
+```bash
+# Start the MCP server
+npm run start:mcp
+
+# Or for development (build and start)
+npm run dev:mcp
 ```
 
 ### Configuration
@@ -153,6 +165,31 @@ extractor.SaveAsJson(myServiceObject);
 // Or get the node directly
 var node = extractor.ExploreObject(myServiceObject);
 Console.WriteLine(node.ToText());
+```
+
+## CLI Usage
+
+You can also use the standalone command-line tools for each language:
+
+### Python CLI
+
+```bash
+cd packages/context-extractor-python
+python3 cli.py services.py UserService --depth 5 --format text --output context.txt
+```
+
+### Java CLI
+
+```bash
+cd packages/context-extractor-java
+java -cp target/classes io.contextextractor.cli.CLI com.example.UserService --depth 5
+```
+
+### C# CLI
+
+```bash
+cd packages/context-extractor-csharp/src
+dotnet run -- UserService --depth 5 --format json --output context.json
 ```
 
 ## Output Format
