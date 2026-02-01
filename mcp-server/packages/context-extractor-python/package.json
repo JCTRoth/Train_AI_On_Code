@@ -1,0 +1,9 @@
+{
+  "name": "context-extractor-python",
+  "version": "1.0.0",
+  "description": "Python implementation of Context Extractor",
+  "scripts": {
+    "test": "python -m pytest tests/ -v",
+    "test:cov": "python -m pytest tests/ -v --cov=src"
+  }
+}

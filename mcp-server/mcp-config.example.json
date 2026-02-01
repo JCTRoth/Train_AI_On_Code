@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "context-extractor": {
+      "command": "node",
+      "args": ["./packages/mcp-server/dist/index.js"],
+      "env": {
+        "PYTHON_PATH": "python3",
+        "JAVA_PATH": "java",
+        "DOTNET_PATH": "dotnet"
+      }
+    }
+  }
+}

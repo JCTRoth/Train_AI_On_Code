@@ -1,0 +1,22 @@
+{
+  "name": "context-extractor-csharp",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "library",
+  "sourceRoot": "packages/context-extractor-csharp/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "dotnet build",
+        "cwd": "packages/context-extractor-csharp/src"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "dotnet test",
+        "cwd": "packages/context-extractor-csharp/tests"
+      }
+    }
+  }
+}

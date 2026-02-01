@@ -3,6 +3,8 @@ import numpy as np
 from tqdm.auto import tqdm
 from logger import get_logger
 import math
+from torch.utils.data import DataLoader
+
 
 class ModelEvaluator:
     """
@@ -68,11 +70,10 @@ class ModelEvaluator:
         total_loss = 0
         total_tokens = 0
         
+        eval_loader = DataLoader(self.eval_dataset, batch_size=self.batch_size, shuffle=False)
+
         with torch.no_grad():
-            for i in range(0, len(self.eval_dataset), self.batch_size):
-                # Get batch
-                batch = self.eval_dataset[i:i+self.batch_size]
-                
+            for batch in eval_loader:
                 try:
                     # Prepare inputs
                     inputs = self._prepare_batch(batch)

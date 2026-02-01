@@ -60,7 +60,11 @@ def check_ram_requirements(model_key, training_args):
     }
     
     # Extract base model name for size estimation
-    base_model = model_key.split('-')[0] + '-' + model_key.split('-')[1] if '-' in model_key else model_key
+    parts = model_key.split('-')
+    if len(parts) >= 2:
+        base_model = parts[0] + '-' + parts[1]
+    else:
+        base_model = model_key
     
     # Default to Phi-2 size if unknown
     estimated_model_size = model_size_estimates.get(base_model, model_size_estimates['phi-2'])
@@ -110,7 +114,7 @@ def check_ram_requirements(model_key, training_args):
         )
         
         # Provide recommendations
-        if model_config.get('quantize', False) == False:
+        if not model_config.get('quantize', False):
             message += "Use quantized model (--model phi-2-quantized), "
         
         if training_args.gradient_accumulation_steps < 8:
