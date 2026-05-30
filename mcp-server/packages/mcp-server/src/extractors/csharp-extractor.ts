@@ -1,11 +1,10 @@
 /**
- * C# Context Extractor - Executes C# extraction via subprocess
+ * C# Context Extractor - Invokes the packaged C# CLI over stdin/stdout.
  */
 
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as os from 'os';
 import { fileURLToPath } from 'url';
 import { ExtractionResult } from '../models.js';
 
@@ -13,13 +12,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export class CSharpExtractor {
+  private buildPromise?: Promise<void>;
+  private csharpRoot: string;
+  private cliDllPath: string;
+  private cliProjectPath: string;
   private dotnetPath: string;
-  private extractorPath: string;
 
   constructor() {
     this.dotnetPath = process.env.DOTNET_PATH || 'dotnet';
-    // Navigate from dist/extractors to packages/context-extractor-csharp
-    this.extractorPath = path.resolve(__dirname, '../../../context-extractor-csharp');
+    const candidateRoots = [
+      path.resolve(__dirname, '../../CSharp'),
+      path.resolve(__dirname, '../../../../CSharp'),
+    ];
+
+    this.csharpRoot = candidateRoots.find((candidate) =>
+      fs.existsSync(path.join(candidate, 'ContextExtractor.Cli', 'ContextExtractor.Cli.csproj')),
+    ) ?? candidateRoots[0];
+    this.cliProjectPath = path.join(this.csharpRoot, 'ContextExtractor.Cli', 'ContextExtractor.Cli.csproj');
+    this.cliDllPath = path.join(this.csharpRoot, 'ContextExtractor.Cli', 'bin', 'Debug', 'net8.0', 'ContextExtractor.Cli.dll');
   }
 
   /**
@@ -31,35 +41,7 @@ export class CSharpExtractor {
     maxDepth: number = 3,
     outputFormat: 'json' | 'text' | 'both' = 'both'
   ): Promise<ExtractionResult> {
-    const startTime = Date.now();
-
-    // Create a temporary project
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'csharp-extract-'));
-
-    try {
-      // Create a minimal console project
-      await this.createTempProject(tempDir, sourceCode, className, maxDepth);
-
-      // Build and run
-      const result = await this.runDotnet(tempDir);
-
-      return {
-        success: true,
-        ...result,
-        language: 'csharp',
-        executionTimeMs: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        language: 'csharp',
-        executionTimeMs: Date.now() - startTime,
-      };
-    } finally {
-      // Cleanup
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
+    return this.runCli({ mode: 'extract-source', sourceCode, className, maxDepth, outputFormat });
   }
 
   /**
@@ -71,12 +53,40 @@ export class CSharpExtractor {
     maxDepth: number = 3,
     outputFormat: 'json' | 'text' | 'both' = 'both'
   ): Promise<ExtractionResult> {
+    return this.runCli({
+      mode: 'extract-file',
+      filePath: path.resolve(filePath),
+      className,
+      maxDepth,
+      outputFormat,
+    });
+  }
+
+  /**
+   * Static analysis of C# source without compilation
+   */
+  async analyzeSource(
+    sourceCode: string,
+    maxDepth: number = 3,
+    className?: string,
+    outputFormat: 'json' | 'text' | 'both' = 'both'
+  ): Promise<ExtractionResult> {
+    return this.runCli({ mode: 'analyze-source', sourceCode, className, maxDepth, outputFormat });
+  }
+
+  private async runCli(request: Record<string, unknown>): Promise<ExtractionResult> {
     const startTime = Date.now();
-    const absolutePath = path.resolve(filePath);
 
     try {
-      const sourceCode = fs.readFileSync(absolutePath, 'utf-8');
-      return await this.extractFromSource(sourceCode, className, maxDepth, outputFormat);
+      await this.ensureBuilt();
+      const rawResponse = await this.runDotnet(request);
+      const parsed = JSON.parse(rawResponse) as ExtractionResult;
+
+      return {
+        ...parsed,
+        language: 'csharp',
+        executionTimeMs: Date.now() - startTime,
+      };
     } catch (error) {
       return {
         success: false,
@@ -87,124 +97,51 @@ export class CSharpExtractor {
     }
   }
 
-  /**
-   * Static analysis of C# source without compilation
-   */
-  async analyzeSource(sourceCode: string): Promise<ExtractionResult> {
-    const startTime = Date.now();
+  private async ensureBuilt(): Promise<void> {
+    if (!fs.existsSync(this.cliProjectPath)) {
+      throw new Error(`C# CLI project not found at ${this.cliProjectPath}`);
+    }
 
-    // Basic regex-based extraction for quick analysis
-    const classMatch = sourceCode.match(/(?:public\s+)?class\s+(\w+)/);
-    const className = classMatch ? classMatch[1] : 'Unknown';
+    if (fs.existsSync(this.cliDllPath)) {
+      return;
+    }
 
-    const methods: any[] = [];
-    const methodRegex = /(?:public|private|protected|internal)?\s*(?:static\s+)?(?:async\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*\(([^)]*)\)/g;
-
-    let match;
-    while ((match = methodRegex.exec(sourceCode)) !== null) {
-      const [, returnType, methodName, params] = match;
-
-      // Skip constructors
-      if (methodName === className) continue;
-
-      const parameters = params.split(',')
-        .filter(p => p.trim())
-        .map(p => {
-          const parts = p.trim().split(/\s+/);
-          return {
-            name: parts[parts.length - 1],
-            type: parts.slice(0, -1).join(' ') || 'object',
-            hasDefault: p.includes('='),
-          };
+    if (!this.buildPromise) {
+      this.buildPromise = new Promise<void>((resolve, reject) => {
+        const build = spawn(this.dotnetPath, ['build', this.cliProjectPath], {
+          cwd: this.csharpRoot,
         });
 
-      methods.push({
-        name: methodName,
-        returnType: returnType,
-        parameters,
-        isStatic: sourceCode.includes(`static ${returnType} ${methodName}`) ||
-                  sourceCode.includes(`static async ${returnType} ${methodName}`),
-        isAsync: sourceCode.includes(`async ${returnType} ${methodName}`) ||
-                 sourceCode.includes(`async Task<${returnType}> ${methodName}`),
+        let stderr = '';
+        build.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        build.on('close', (code) => {
+          this.buildPromise = undefined;
+
+          if (code === 0 && fs.existsSync(this.cliDllPath)) {
+            resolve();
+            return;
+          }
+
+          reject(new Error(`dotnet build failed: ${stderr || `exit code ${code}`}`));
+        });
+
+        build.on('error', (error) => {
+          this.buildPromise = undefined;
+          reject(error);
+        });
       });
     }
 
-    return {
-      success: true,
-      data: {
-        name: className,
-        type: className,
-        methods,
-        dependencies: [],
-        depth: 0,
-      },
-      language: 'csharp',
-      executionTimeMs: Date.now() - startTime,
-    };
+    await this.buildPromise;
   }
 
-  private async createTempProject(
-    tempDir: string,
-    sourceCode: string,
-    className: string,
-    maxDepth: number
-  ): Promise<void> {
-    // Create project file
-    const csproj = `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
-</Project>`;
-
-    fs.writeFileSync(path.join(tempDir, 'Extractor.csproj'), csproj);
-
-    // Copy the ContextExtractor service
-    const extractorSrc = path.join(this.extractorPath, 'src');
-    if (fs.existsSync(extractorSrc)) {
-      // Copy Models
-      const modelsDir = path.join(tempDir, 'Models');
-      fs.mkdirSync(modelsDir, { recursive: true });
-      
-      const srcModels = path.join(extractorSrc, 'Models');
-      if (fs.existsSync(srcModels)) {
-        for (const file of fs.readdirSync(srcModels)) {
-          fs.copyFileSync(path.join(srcModels, file), path.join(modelsDir, file));
-        }
-      }
-
-      // Copy ContextExtractorService
-      const serviceFile = path.join(extractorSrc, 'ContextExtractorService.cs');
-      if (fs.existsSync(serviceFile)) {
-        fs.copyFileSync(serviceFile, path.join(tempDir, 'ContextExtractorService.cs'));
-      }
-    }
-
-    // Write the source code
-    fs.writeFileSync(path.join(tempDir, 'Target.cs'), sourceCode);
-
-    // Create the main program
-    const program = `using System;
-using System.Text.Json;
-using ContextExtractor;
-
-var instance = new ${className}();
-var extractor = new ContextExtractorService(${maxDepth});
-var result = extractor.ExploreObject(instance);
-
-var jsonOutput = extractor.ToJson(result);
-Console.WriteLine(jsonOutput);
-`;
-
-    fs.writeFileSync(path.join(tempDir, 'Program.cs'), program);
-  }
-
-  private runDotnet(projectDir: string): Promise<Partial<ExtractionResult>> {
+  private runDotnet(request: Record<string, unknown>): Promise<string> {
     return new Promise((resolve, reject) => {
-      const dotnet = spawn(this.dotnetPath, ['run', '--project', projectDir], {
-        cwd: projectDir,
+      const dotnet = spawn(this.dotnetPath, [this.cliDllPath], {
+        cwd: this.csharpRoot,
       });
 
       let stdout = '';
@@ -220,24 +157,16 @@ Console.WriteLine(jsonOutput);
 
       dotnet.on('close', (code) => {
         if (code === 0) {
-          try {
-            const data = JSON.parse(stdout.trim());
-            resolve({
-              data,
-              jsonOutput: stdout.trim(),
-            });
-          } catch (e) {
-            // Might be text output
-            resolve({
-              textOutput: stdout.trim(),
-            });
-          }
+          resolve(stdout.trim());
         } else {
-          reject(new Error(`dotnet run failed: ${stderr}`));
+          reject(new Error(`dotnet run failed: ${stderr || stdout}`));
         }
       });
 
       dotnet.on('error', reject);
+
+      dotnet.stdin.write(JSON.stringify(request));
+      dotnet.stdin.end();
     });
   }
 }

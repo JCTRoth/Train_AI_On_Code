@@ -18,6 +18,8 @@ npm install
 npm run build
 ```
 
+The published npm package includes the `CSharp` source tree. The first C# request builds the bundled .NET CLI locally and then reuses the compiled DLL for subsequent requests.
+
 ## Configuration
 
 Add to your MCP settings (e.g., Claude Desktop, VS Code):
@@ -47,9 +49,12 @@ Extract method tree context from source code using reflection.
 **Parameters:**
 - `language` (required): `python`, `java`, or `csharp`
 - `sourceCode` (required): The complete source code to analyze
+- `filePath` (optional): Absolute path to the source file to analyze
 - `className` (required): The name of the main class to extract
 - `maxDepth` (optional): Maximum depth for dependencies (default: 3)
 - `outputFormat` (optional): `json`, `text`, or `both` (default: `both`)
+
+Provide either `sourceCode` or `filePath`.
 
 **Example:**
 ```json
@@ -78,7 +83,11 @@ Perform quick static analysis without code execution.
 **Parameters:**
 - `language` (required): `python`, `java`, or `csharp`
 - `sourceCode` (required): The source code to analyze
+- `filePath` (optional): Absolute path to the source file to analyze
+- `className` (optional): Preferred class name when multiple classes exist
 - `maxDepth` (optional): Maximum depth (default: 3)
+
+Provide either `sourceCode` or `filePath`.
 
 ### `get_supported_languages`
 

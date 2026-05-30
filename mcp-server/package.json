@@ -7,12 +7,12 @@
     "test": "npm run test:python && npm run test:java && npm run test:csharp && npm run test:mcp",
     "test:python": "cd packages/context-extractor-python && python3 -m pytest tests/ -v",
     "test:java": "cd packages/context-extractor-java && mvn test",
-    "test:csharp": "cd packages/context-extractor-csharp && dotnet test",
+    "test:csharp": "cd CSharp/ContextExtractor.Tests && dotnet test",
     "test:mcp": "cd packages/mcp-server && npm run test",
     "build:java": "cd packages/context-extractor-java && mvn package",
-    "build:csharp": "cd packages/context-extractor-csharp && dotnet build",
+    "build:csharp": "cd CSharp/ContextExtractor.Cli && dotnet build",
     "build:mcp": "cd packages/mcp-server && npm run build",
-    "start:mcp": "node packages/mcp-server/dist/src/index.js",
+    "start:mcp": "node packages/mcp-server/dist/index.js",
     "dev:mcp": "cd packages/mcp-server && npm run dev"
   },
   "keywords": [

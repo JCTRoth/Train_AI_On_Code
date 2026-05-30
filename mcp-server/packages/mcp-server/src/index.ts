@@ -7,6 +7,8 @@
  * Supports Python, Java, and C# source code analysis.
  */
 
+import * as fs from 'fs';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -48,10 +50,13 @@ const server = new Server(
 // Tool schemas
 const ExtractContextSchema = z.object({
   language: z.enum(['python', 'java', 'csharp']).describe('Programming language of the source code'),
-  sourceCode: z.string().describe('The source code to analyze'),
+  sourceCode: z.string().optional().describe('The source code to analyze'),
+  filePath: z.string().optional().describe('Absolute path to the source file to analyze'),
   className: z.string().describe('The name of the class to extract context from'),
   maxDepth: z.number().optional().default(3).describe('Maximum depth for dependency exploration'),
   outputFormat: z.enum(['json', 'text', 'both']).optional().default('both').describe('Output format'),
+}).refine((value) => Boolean(value.sourceCode || value.filePath), {
+  message: 'Either sourceCode or filePath must be provided.',
 });
 
 const ExtractFromFileSchema = z.object({
@@ -64,8 +69,13 @@ const ExtractFromFileSchema = z.object({
 
 const AnalyzeSourceSchema = z.object({
   language: z.enum(['python', 'java', 'csharp']).describe('Programming language of the source code'),
-  sourceCode: z.string().describe('The source code to analyze statically'),
+  sourceCode: z.string().optional().describe('The source code to analyze statically'),
+  filePath: z.string().optional().describe('Absolute path to the source file to analyze statically'),
+  className: z.string().optional().describe('Optional class name when the source contains multiple classes'),
   maxDepth: z.number().optional().default(3).describe('Maximum depth for analysis'),
+  outputFormat: z.enum(['json', 'text', 'both']).optional().default('both').describe('Output format'),
+}).refine((value) => Boolean(value.sourceCode || value.filePath), {
+  message: 'Either sourceCode or filePath must be provided.',
 });
 
 // List available tools
@@ -97,6 +107,10 @@ Example use cases:
               type: 'string',
               description: 'The complete source code to analyze',
             },
+            filePath: {
+              type: 'string',
+              description: 'Absolute path to the source file to analyze',
+            },
             className: {
               type: 'string',
               description: 'The name of the main class to extract context from',
@@ -113,7 +127,7 @@ Example use cases:
               default: 'both',
             },
           },
-          required: ['language', 'sourceCode', 'className'],
+          required: ['language', 'className'],
         },
       },
       {
@@ -174,13 +188,27 @@ Use this for:
               type: 'string',
               description: 'The source code to analyze',
             },
+            filePath: {
+              type: 'string',
+              description: 'Absolute path to the source file to analyze',
+            },
+            className: {
+              type: 'string',
+              description: 'Optional class name when the file contains multiple classes',
+            },
             maxDepth: {
               type: 'number',
               description: 'Maximum depth for analysis (default: 3)',
               default: 3,
             },
+            outputFormat: {
+              type: 'string',
+              enum: ['json', 'text', 'both'],
+              description: 'Output format',
+              default: 'both',
+            },
           },
-          required: ['language', 'sourceCode'],
+          required: ['language'],
         },
       },
       {
@@ -206,12 +234,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const parsed = ExtractContextSchema.parse(args);
         const extractor = extractors[parsed.language];
         
-        const result = await extractor.extractFromSource(
-          parsed.sourceCode,
-          parsed.className,
-          parsed.maxDepth,
-          parsed.outputFormat
-        );
+        const result = parsed.sourceCode
+          ? await extractor.extractFromSource(
+              parsed.sourceCode,
+              parsed.className,
+              parsed.maxDepth,
+              parsed.outputFormat
+            )
+          : await extractor.extractFromFile(
+              parsed.filePath!,
+              parsed.className,
+              parsed.maxDepth,
+              parsed.outputFormat
+            );
 
         return {
           content: [
@@ -247,9 +282,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'analyze_source_static': {
         const parsed = AnalyzeSourceSchema.parse(args);
         const extractor = extractors[parsed.language];
+        const sourceCode = parsed.sourceCode ?? fs.readFileSync(parsed.filePath!, 'utf-8');
 
         const result = await extractor.analyzeSource(
-          parsed.sourceCode,
+          sourceCode,
           parsed.maxDepth
         );
 

@@ -4,15 +4,22 @@
   "description": "MCP Server for Context Extraction - Provides reflection-based context extraction for AI assistants",
   "main": "dist/index.js",
   "type": "module",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "CSharp/**/*"
+  ],
   "bin": {
     "context-extractor-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node ./scripts/clean-dist.mjs && tsc",
+    "prepack": "node ./scripts/prepare-package.mjs && npm run build",
+    "postpack": "node ./scripts/cleanup-package.mjs",
     "start": "node dist/index.js",
     "dev": "tsc && node dist/index.js",
     "watch": "tsc --watch",
-    "test": "tsc && node dist/tests/mcp-server.test.js"
+    "test": "npm run build && node tests/mcp-server.test.js"
   },
   "keywords": [
     "mcp",

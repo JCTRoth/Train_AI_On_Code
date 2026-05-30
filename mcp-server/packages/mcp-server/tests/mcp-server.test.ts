@@ -13,7 +13,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const serverPath = path.resolve(__dirname, '../src/index.js');
+const serverPath = path.resolve(__dirname, '../dist/index.js');
+const csharpFixturePath = path.resolve(__dirname, '../../../CSharp/ContextExtractor.Tests/Fixtures/HugeHierarchy.cs');
 
 interface TestResult {
   name: string;
@@ -36,7 +37,7 @@ async function runTest(
     const timeout = setTimeout(() => {
       proc.kill();
       resolve({ name, passed: false, error: 'Timeout' });
-    }, 5000);
+    }, 30000);
 
     proc.stdout.on('data', (data) => {
       stdout += data.toString();
@@ -189,6 +190,35 @@ async function main() {
       const resources = res.result?.resources || [];
       const uris = resources.map((r: any) => r.uri);
       return uris.includes('context-extractor://examples/python');
+    }
+  ));
+
+  // Test 7: C# runtime extraction from file
+  results.push(await runTest(
+    'C# runtime extraction',
+    {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: {
+        name: 'extract_context',
+        arguments: {
+          language: 'csharp',
+          filePath: csharpFixturePath,
+          className: 'OrderService',
+          maxDepth: 3,
+          outputFormat: 'json'
+        }
+      }
+    },
+    (res) => {
+      const content = res.result?.content?.[0]?.text;
+      if (!content) return false;
+      const data = JSON.parse(content);
+      return data.success === true &&
+             data.data?.type === 'OrderService' &&
+             Array.isArray(data.data?.dependencies) &&
+             data.data.dependencies.some((dependency: any) => dependency.name === 'Catalog');
     }
   ));
 
